@@ -7,7 +7,7 @@ Small utility functions for working with text files:
 - merge sorted file parts into single sorted file
 
 ```py
-from fileutiles import disksort
+from fileutils import disksort
 
 disksort("data/large.csv", "sorted.csv", col=6)
 ```

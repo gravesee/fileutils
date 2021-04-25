@@ -1,4 +1,5 @@
 import csv
+import operator
 import os
 from operator import itemgetter
 from os.path import split
@@ -6,6 +7,7 @@ from types import prepare_class
 from typing import Iterable, List
 from contextlib import ExitStack
 import heapq
+from itertools import groupby, product
 
 from joblib import Parallel, delayed
 
@@ -24,7 +26,7 @@ def split_file(
     prefix: str = "part_{i:03d}",
 ) -> List[str]:
     """quickly split a file into nparts while preserving full lines"""
-    
+
     if dest is None:
         dest = "."
 
@@ -65,7 +67,7 @@ def split_file(
                 fout.write(fin.read(nbytes + nl))
                 files.append(fname)
                 pos += nbytes + nl
-    
+
     return files
 
 
@@ -111,7 +113,7 @@ def merge_files(
     outfile: str,
     col: int,
     dialect: csv.Dialect = csv.excel,
-    reverse: bool = False
+    reverse: bool = False,
 ):
     with open(outfile, "w") as fout:
         with ExitStack() as stack:
@@ -131,14 +133,49 @@ def disksort(
     reverse: bool = False,
     dialect: csv.Dialect = csv.excel,
     nbytes: int = 64 * 1024 * 1024,
-    n_jobs=-1):
+    n_jobs=-1,
+):
     """sort file on disk using nbytes * n_jobs memory"""
-    
+
     import tempfile
+
     with tempfile.TemporaryDirectory() as tmp:
-        files = split_file(infile, dest=tmp, header=header, newline=newline, nbytes=nbytes)
+        files = split_file(
+            infile, dest=tmp, header=header, newline=newline, nbytes=nbytes
+        )
         sort_files(files, col, dialect, reverse, inplace=True, n_jobs=n_jobs)
         merge_files(files, outfile, col, dialect, reverse)
+
+
+def left_join(left: str, right: str, left_on: int, right_on: int):
+    with open(left, "r") as fl, open(right, "r") as fr:
+        lsubset = groupby(csv.reader(fl), key=itemgetter(left_on))
+        rsubset = groupby(csv.reader(fr), key=itemgetter(right_on))
+
+        lkey, llines = next(lsubset)
+        rkey, rlines = next(rsubset)
+
+        try:
+            while True:
+                if lkey == rkey:
+                    for l, r in product(llines, rlines):
+                        yield l + r
+                    lkey, llines = next(lsubset)
+                    rkey, rlines = next(rsubset)
+                
+                elif lkey < rkey:
+                    lkey, llines = next(lsubset)
+                
+                else:
+                    rkey, rlines = next(rsubset)
+        except:
+            pass
+
+
+def join(left, right, left_on, right_on, outfile: str):
+    res = left_join(left, right, left_on, right_on)
+    with open(outfile, "w") as fout:
+        fout.writelines(add_newline(res, sep=","))
 
 
 def checksum_ignore_order(file: str):
