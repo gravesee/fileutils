@@ -24,11 +24,7 @@ def split_file(
     prefix: str = "part_{i:03d}",
 ) -> List[str]:
     """quickly split a file into nparts while preserving full lines"""
-    size = os.path.getsize(file)
-    nparts = 100
-    nbytes = size // nparts
-    nbytes = 1024 * 64
-
+    
     if dest is None:
         dest = "."
 
@@ -67,7 +63,7 @@ def split_file(
 
             with open(fname, "wb") as fout:
                 fout.write(fin.read(nbytes + nl))
-                file.append(fname)
+                files.append(fname)
                 pos += nbytes + nl
     
     return files
