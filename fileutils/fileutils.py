@@ -1,6 +1,8 @@
 import csv
 import os
 from operator import itemgetter
+from os.path import split
+from types import prepare_class
 from typing import Iterable, List
 from contextlib import ExitStack
 import heapq
@@ -18,13 +20,14 @@ def split_file(
     dest: str = None,
     header: bool = True,
     newline: bytes = b"\r\n",
-    nparts: int = 100,
+    nbytes: int = 64 * 1024 * 1024,
     prefix: str = "part_{i:03d}",
-):
+) -> List[str]:
     """quickly split a file into nparts while preserving full lines"""
     size = os.path.getsize(file)
     nparts = 100
     nbytes = size // nparts
+    nbytes = 1024 * 64
 
     if dest is None:
         dest = "."
@@ -33,6 +36,7 @@ def split_file(
         os.mkdir(dest)
 
     i = 0
+    files: List[str] = []
     with open(file, "rb") as fin:
 
         if header:
@@ -52,6 +56,7 @@ def split_file(
                 with open(fname, "wb") as fout:
                     fin.seek(pos)
                     fout.write(fin.read(nbytes))
+                    files.append(fname)
                 break
 
             # get the position of the next newline
@@ -62,7 +67,10 @@ def split_file(
 
             with open(fname, "wb") as fout:
                 fout.write(fin.read(nbytes + nl))
+                file.append(fname)
                 pos += nbytes + nl
+    
+    return files
 
 
 def add_newline(lines: Iterable[Iterable[str]], sep: str):
@@ -107,14 +115,34 @@ def merge_files(
     outfile: str,
     col: int,
     dialect: csv.Dialect = csv.excel,
+    reverse: bool = False
 ):
     with open(outfile, "w") as fout:
         with ExitStack() as stack:
             handles = [stack.enter_context(open(file)) for file in files]
             readers = [csv.reader(handle) for handle in handles]
 
-            lines = heapq.merge(*readers, key=itemgetter(col))
+            lines = heapq.merge(*readers, key=itemgetter(col), reverse=reverse)
             fout.writelines(add_newline(lines, dialect.delimiter))
+
+
+def disksort(
+    infile: str,
+    outfile: str,
+    col: int,
+    header: bool = True,
+    newline: bytes = b"\r\n",
+    reverse: bool = False,
+    dialect: csv.Dialect = csv.excel,
+    nbytes: int = 64 * 1024 * 1024,
+    n_jobs=-1):
+    """sort file on disk using nbytes * n_jobs memory"""
+    
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        files = split_file(infile, dest=tmp, header=header, newline=newline, nbytes=nbytes)
+        sort_files(files, col, dialect, reverse, inplace=True, n_jobs=n_jobs)
+        merge_files(files, outfile, col, dialect, reverse)
 
 
 def checksum_ignore_order(file: str):
